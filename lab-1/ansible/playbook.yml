@@ -1,0 +1,84 @@
+- name: Update package cache
+  hosts: all
+  become: yes
+  gather_facts: False
+  become_user: ubuntu
+  vars:
+    kafka_file_link: "https://downloads.apache.org/kafka/3.4.0/kafka_2.13-3.4.0.tgz"
+    kafka_dir: "/home/ubuntu/kafka_2.13-3.4.0"
+    data_dir: "/data/zookeeper"
+  tasks:
+    - name: Read list of private ips from file
+      set_fact:
+        private_ips: "{{ lookup('file', 'private_ips.txt') | split('\n') }}"
+
+    - name: Update apt package cache
+      command: apt update -y
+      when: False
+
+    - name: Install java
+      become: true
+      apt:
+        name: default-jdk
+        state: present
+      when: False
+
+    - name: Download kafka and extract the archive
+      unarchive:
+        src: "{{ kafka_file_link }}"
+        dest: /home/ubuntu/
+        remote_src: yes
+        owner: ubuntu
+        group: ubuntu
+      when: False
+        
+    - name: Create directory with custom permissions and ownership
+      file:
+        path: "{{ data_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+      when: False
+    
+    - name: Use variable set from task
+      debug:
+        msg: 'Kafka dir is is {{ kafka_dir }} and data is {{ data_dir }}'
+
+    - name: edit data directory in zookeeper config file
+      command: sed -i 's;/tmp/zookeeper;{{ data_dir }};g' "{{ kafka_dir }}"/config/zookeeper.properties
+      when: False
+
+    - name: "Add servers IPs in zookeeper config file"
+      lineinfile:
+        path: "{{ kafka_dir }}/config/zookeeper.properties"
+        line: "server.{{ index }}={{ item }}:2888:3888"
+        state: present
+        backup: yes
+      loop: "{{ private_ips }}"
+      loop_control:
+          index_var: index
+      when: False
+
+    - name: "Add time limit in config file"
+      lineinfile:
+        path: "{{ kafka_dir }}/config/zookeeper.properties"
+        line: "{{ item }}"
+        state: present
+        backup: yes
+      loop: 
+        - ticketTime=2000
+        - initLimit=10
+        - syncLimit=5
+      when: False
+
+    - name: Create file with unique ID
+      copy:
+        dest: "{{ data_dir }}/myid"
+        content: "{{ groups['hosts'].index(inventory_hostname) }}\n"
+        owner: ubuntu
+        group: ubuntu
+      when: False
+    
+    - name: Run zookeeper servers
+      shell: "sudo {{ kafka_dir }}/bin/zookeeper-server-start.sh -daemon {{ kafka_dir }}/config/zookeeper.properties"
+  
